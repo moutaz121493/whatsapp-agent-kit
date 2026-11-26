@@ -105,3 +105,29 @@ def test_send_text_is_noop_without_credentials(monkeypatch) -> None:
     from app import media
     monkeypatch.delenv("WHATSAPP_TOKEN", raising=False)
     assert media.send_text("+491700000001", "hi") is False
+
+
+def test_speakable_and_language_pick() -> None:
+    from app import media
+    assert media._is_arabic("جميع الخدمات تعمل") and not media._is_arabic("All services are healthy")
+    long = "All good. " * 80
+    out = media._speakable("**" + long + "**")
+    assert len(out) <= 380 and "*" not in out and out.endswith(".")
+
+
+def test_tts_request_picks_arabic_voice(monkeypatch) -> None:
+    import io
+    from app import media
+    seen = {}
+    def fake(req, timeout=0):
+        seen.update(json.loads(req.data)); return io.BytesIO(b"RIFFfake")
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    monkeypatch.setattr(media.urllib.request, "urlopen", fake)
+    data, mime = media.synthesize_speech("جميع الخدمات تعمل بشكل سليم")
+    assert seen["model"] == "canopylabs/orpheus-arabic-saudi" and seen["voice"] == "fahad" and mime == "audio/wav" and data == b"RIFFfake"
+
+
+def test_send_audio_noop_without_credentials(monkeypatch) -> None:
+    from app import media
+    monkeypatch.delenv("WHATSAPP_TOKEN", raising=False)
+    assert media.send_audio("+491700000001", b"x", "audio/mpeg") is False

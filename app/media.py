@@ -77,3 +77,57 @@ def send_text(to: str, body: str) -> bool:
     )
     with urllib.request.urlopen(req, timeout=15) as r:
         return 200 <= r.status < 300
+
+
+# ---------- spoken replies (voice note in -> voice note out) ----------
+def _is_arabic(text: str) -> bool:
+    letters = [c for c in text if c.isalpha()]
+    return bool(letters) and sum("\u0600" <= c <= "\u06ff" for c in letters) / len(letters) > 0.3
+
+
+def _speakable(text: str, limit: int = 380) -> str:
+    """TTS models take short inputs: strip markdown and cut at a sentence end before `limit` characters."""
+    t = " ".join(text.replace("**", "").replace("`", "").split())
+    if len(t) <= limit:
+        return t
+    cut = max(t.rfind(p, 0, limit) for p in (". ", "! ", "? ", "، ", "؟ "))
+    return t[: cut + 1] if cut > 80 else t[:limit]
+
+
+def synthesize_speech(text: str, fmt: str | None = None) -> tuple[bytes, str]:
+    """Text -> audio with an OpenAI-compatible TTS endpoint (default Groq Orpheus, English or Saudi Arabic voice)."""
+    arabic = _is_arabic(text)
+    model = os.getenv("TTS_MODEL_AR" if arabic else "TTS_MODEL", "canopylabs/orpheus-arabic-saudi" if arabic else "canopylabs/orpheus-v1-english")
+    voice = os.getenv("TTS_VOICE_AR" if arabic else "TTS_VOICE", "fahad" if arabic else "troy")
+    fmt = fmt or os.getenv("TTS_FORMAT", "wav")
+    body = json.dumps({"model": model, "voice": voice, "input": _speakable(text), "response_format": fmt}).encode()
+    base = os.getenv("STT_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+    req = urllib.request.Request(f"{base}/audio/speech", data=body, method="POST",
+                                 headers={"Authorization": f"Bearer {_stt_key()}", "Content-Type": "application/json", "User-Agent": "whatsapp-agent-kit/1.2"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read(), {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg", "flac": "audio/flac"}.get(fmt, "audio/wav")
+
+
+def send_audio(to: str, data: bytes, mime: str) -> bool:
+    """Upload audio to WhatsApp and send it as a voice message. No-op without WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID."""
+    token, phone_id = os.getenv("WHATSAPP_TOKEN", "").strip(), os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    if not (token and phone_id and to and data):
+        return False
+    boundary = uuid.uuid4().hex
+    ext = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/aac": "aac", "audio/mp4": "m4a"}.get(mime, "bin")
+    form = b"".join([
+        f'--{boundary}\r\nContent-Disposition: form-data; name="messaging_product"\r\n\r\nwhatsapp\r\n'.encode(),
+        f'--{boundary}\r\nContent-Disposition: form-data; name="type"\r\n\r\n{mime}\r\n'.encode(),
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="reply.{ext}"\r\nContent-Type: {mime}\r\n\r\n'.encode(),
+        data, f"\r\n--{boundary}--\r\n".encode(),
+    ])
+    hdr = {"Authorization": f"Bearer {token}", "User-Agent": "whatsapp-agent-kit/1.2"}
+    up = urllib.request.Request(f"{GRAPH}/{phone_id}/media", data=form, method="POST",
+                                headers={**hdr, "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(up, timeout=30) as r:
+        media_id = json.loads(r.read().decode())["id"]
+    payload = {"messaging_product": "whatsapp", "to": to.lstrip("+"), "type": "audio", "audio": {"id": media_id}}
+    req = urllib.request.Request(f"{GRAPH}/{phone_id}/messages", data=json.dumps(payload).encode(), method="POST",
+                                 headers={**hdr, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return 200 <= r.status < 300

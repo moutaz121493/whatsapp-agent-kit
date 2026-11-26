@@ -15,7 +15,7 @@ from .hitl import HitlStore
 import base64
 import logging
 
-from .media import send_text, transcribe_audio_bytes, transcribe_voice_note
+from .media import send_audio, send_text, synthesize_speech, transcribe_audio_bytes, transcribe_voice_note
 from .security import is_sender_allowed, parse_allowlist, verify_meta_signature
 
 DB_PATH = Path(os.getenv("HITL_DB_PATH", "/tmp/whatsapp-hitl.db"))
@@ -100,6 +100,8 @@ async def receive_webhook(
 
                 res = bridge.handle_text(sender=sender, text=text)
                 res["sent"] = _reply(sender, res.get("reply", ""))
+                if msg_type == "audio":
+                    res["voice_sent"] = _voice_reply(sender, res.get("reply", ""))
                 outcomes.append({"sender": sender, "type": msg_type, **res})
 
     return {"ok": True, "processed": len(outcomes), "outcomes": outcomes}
@@ -110,6 +112,21 @@ def _reply(to: str, text: str) -> bool:
         return bool(text) and send_text(to, text)
     except Exception as exc:  # never fail the webhook (Meta would retry and duplicate the run)
         log.warning("reply to WhatsApp failed: %s", type(exc).__name__)
+        return False
+
+
+VOICE_REPLIES = os.getenv("VOICE_REPLIES", "0") == "1"
+
+
+def _voice_reply(to: str, text: str) -> bool:
+    """Voice note in -> voice note out (VOICE_REPLIES=1). The text reply is always sent first, so a TTS failure loses nothing."""
+    if not (VOICE_REPLIES and text):
+        return False
+    try:
+        data, mime = synthesize_speech(text, fmt=os.getenv("TTS_FORMAT_WHATSAPP", "mp3"))
+        return send_audio(to, data, mime)
+    except Exception as exc:
+        log.warning("voice reply failed: %s", type(exc).__name__)
         return False
 
 
@@ -130,6 +147,12 @@ def demo_voice(msg: DemoVoice) -> dict[str, Any]:
         return {"status": "stt_failed", "reply": f"Speech-to-text failed ({type(exc).__name__}). Is GROQ_API_KEY set?", "cost_usd": 0.0}
     res = bridge.handle_text(sender=msg.sender, text=tr["transcript"])
     res["transcript"] = tr
+    if VOICE_REPLIES and res.get("reply"):
+        try:
+            audio, amime = synthesize_speech(res["reply"])
+            res["reply_audio"] = {"mime": amime, "b64": base64.b64encode(audio).decode()}
+        except Exception as exc:
+            res["reply_audio_error"] = type(exc).__name__
     return res
 
 
@@ -220,6 +243,10 @@ DEMO_HTML = """<!doctype html>
       const data = await r.json();
       if (data.transcript) add('bot', '📝 ' + data.transcript.transcript, `speech-to-text ${data.transcript.stt_ms} ms`);
       add('bot', data.reply || JSON.stringify(data), `status=${data.status} · cost=$${(data.cost_usd || 0).toFixed(4)}`);
+      if (data.reply_audio) {
+        const a = document.createElement('audio'); a.controls = true; a.src = `data:${data.reply_audio.mime};base64,${data.reply_audio.b64}`;
+        a.style.alignSelf = 'flex-start'; log.appendChild(a); log.scrollTop = log.scrollHeight; a.play().catch(() => {});
+      }
     }
     document.getElementById('aud').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) sendAudio(f); e.target.value = ''; });
     // in-browser recording needs a secure context (https or localhost); the file picker works everywhere
