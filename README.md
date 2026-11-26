@@ -44,6 +44,13 @@ Open **`http://127.0.0.1:8082/demo`** in your browser to test:
 - `VOICE_REPLIES=1`: a voice note gets a **spoken answer** too (Orpheus TTS, English or Saudi Arabic voice chosen from the reply text, converted to an OGG/Opus voice note with `opusenc`); the text reply always goes first, so a TTS failure loses nothing. Measured on a Pi 5: voice question → spoken answer in ~2 s (English), ~4 s (longer Arabic answer).
   If a voice note can't be transcribed, the sender is told so instead of the agent guessing.
 
+## Telegram channel (no public webhook)
+
+Set `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TELEGRAM_ALLOWED_IDS` (your numeric user ID). The bot **long-polls**
+Telegram over outbound HTTPS, so nothing on your server is exposed. Unknown users are refused and told their ID (so you
+can allow yourself on first contact); group chats are ignored. Text and voice notes use the same guarded bridge
+(injection screen, `YES <CODE>` approvals bound to the sender); with `VOICE_REPLIES=1` voice notes get a spoken answer.
+
 ## Included n8n Workflow (`n8n/whatsapp-router.json`)
 
 Import `n8n/whatsapp-router.json` into [`pi-n8n-ai-stack`](https://github.com/moutaz121493/pi-n8n-ai-stack) to orchestrate inbound WhatsApp webhooks visually alongside other automations.

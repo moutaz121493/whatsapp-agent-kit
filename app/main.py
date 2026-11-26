@@ -43,12 +43,37 @@ class DemoMessage(BaseModel):
     text: str = Field(..., min_length=1, max_length=1000)
 
 
+def _speak_ogg(text: str) -> bytes:
+    wav, _ = synthesize_speech(text)
+    return to_ogg_opus(wav)
+
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+telegram_bot = None
+if TELEGRAM_TOKEN:
+    from .telegram import TelegramBot
+    telegram_bot = TelegramBot(
+        TELEGRAM_TOKEN,
+        handle_text=lambda sender, text: bridge.handle_text(sender=sender, text=text),
+        transcribe=lambda data, mime, name: transcribe_audio_bytes(data, mime=mime, filename=name),
+        speak=_speak_ogg if os.getenv("VOICE_REPLIES", "0") == "1" else None,
+        offset_file=DB_PATH.parent / "tg_offset",
+    )
+
+
+@app.on_event("startup")
+def _start_channels() -> None:
+    if telegram_bot:
+        telegram_bot.start()
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {
         "ok": True,
         "agent_upstream": bridge.agent_url or "standalone-demo",
         "allowlist_count": len(ALLOWLIST),
+        "telegram": bool(telegram_bot),
     }
 
 
