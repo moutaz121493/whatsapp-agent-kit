@@ -15,6 +15,8 @@ from .hitl import HitlStore
 import base64
 import logging
 
+logging.basicConfig(level=logging.INFO)
+
 from .media import send_audio, send_text, synthesize_speech, to_ogg_opus, transcribe_audio_bytes, transcribe_voice_note
 from .security import is_sender_allowed, parse_allowlist, verify_meta_signature
 
@@ -54,7 +56,7 @@ if TELEGRAM_TOKEN:
     from .telegram import TelegramBot
     telegram_bot = TelegramBot(
         TELEGRAM_TOKEN,
-        handle_text=lambda sender, text: bridge.handle_text(sender=sender, text=text),
+        handle_text=lambda sender, text: bridge.handle_text(sender=sender, text=text, channel="telegram"),
         transcribe=lambda data, mime, name: transcribe_audio_bytes(data, mime=mime, filename=name),
         speak=_speak_ogg if os.getenv("VOICE_REPLIES", "0") == "1" else None,
         offset_file=DB_PATH.parent / "tg_offset",
@@ -103,9 +105,11 @@ async def receive_webhook(
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
+            phone_id = (value.get("metadata") or {}).get("phone_number_id")
             for msg in value.get("messages", []):
                 sender = msg.get("from", "")
                 if not is_sender_allowed(sender, ALLOWLIST):
+                    log.warning("denied WhatsApp sender ending %s", sender[-4:])
                     outcomes.append({"sender": sender, "status": "denied_not_allowlisted"})
                     continue
 
@@ -116,25 +120,27 @@ async def receive_webhook(
                         tr = transcribe_voice_note(media_id)
                     except Exception as exc:  # media download / speech-to-text failed: tell the sender, don't guess
                         log.warning("voice note %s failed: %s", media_id, type(exc).__name__)
-                        _reply(sender, "Sorry, I couldn't understand that voice note. Please try again or type it.")
+                        _reply(sender, "Sorry, I couldn't understand that voice note. Please try again or type it.", phone_id)
                         outcomes.append({"sender": sender, "type": msg_type, "status": "stt_failed"})
                         continue
                     text = tr["transcript"]
                 else:
                     text = msg.get("text", {}).get("body", "")
 
-                res = bridge.handle_text(sender=sender, text=text)
-                res["sent"] = _reply(sender, res.get("reply", ""))
+                res = bridge.handle_text(sender=sender, text=text, channel="whatsapp")
+                res["sent"] = _reply(sender, res.get("reply", ""), phone_id)
+                if res.get("job_id"):
+                    _watch_job(res["job_id"], lambda t, s=sender, p=phone_id: _reply(s, t, p))
                 if msg_type == "audio":
-                    res["voice_sent"] = _voice_reply(sender, res.get("reply", ""))
+                    res["voice_sent"] = _voice_reply(sender, res.get("reply", ""), phone_id)
                 outcomes.append({"sender": sender, "type": msg_type, **res})
 
     return {"ok": True, "processed": len(outcomes), "outcomes": outcomes}
 
 
-def _reply(to: str, text: str) -> bool:
+def _reply(to: str, text: str, phone_id: str | None = None) -> bool:
     try:
-        return bool(text) and send_text(to, text)
+        return bool(text) and send_text(to, text, phone_id)
     except Exception as exc:  # never fail the webhook (Meta would retry and duplicate the run)
         log.warning("reply to WhatsApp failed: %s", type(exc).__name__)
         return False
@@ -143,13 +149,35 @@ def _reply(to: str, text: str) -> bool:
 VOICE_REPLIES = os.getenv("VOICE_REPLIES", "0") == "1"
 
 
-def _voice_reply(to: str, text: str) -> bool:
+def _watch_job(job_id: str, send) -> None:
+    """Follow a started maintenance job in the background and send one message when it finishes (max 45 min)."""
+    import threading, time
+
+    def loop() -> None:
+        for _ in range(270):
+            time.sleep(10)
+            try:
+                st = bridge.job_status(job_id)
+            except Exception:
+                continue
+            if st.get("error"):
+                return
+            if not st.get("running"):
+                tail = "\n".join((st.get("log") or "").strip().splitlines()[-4:])
+                send(("✅ Done: " if st.get("ok") else "❌ Failed: ") + f"job {job_id}\n{tail}"[:1500])
+                return
+        send(f"⏳ Job {job_id} is still running after 45 min; check the Maintenance page.")
+
+    threading.Thread(target=loop, daemon=True, name=f"job-{job_id}").start()
+
+
+def _voice_reply(to: str, text: str, phone_id: str | None = None) -> bool:
     """Voice note in -> voice note out (VOICE_REPLIES=1). The text reply is always sent first, so a TTS failure loses nothing."""
     if not (VOICE_REPLIES and text):
         return False
     try:
         wav, _ = synthesize_speech(text)
-        return send_audio(to, to_ogg_opus(wav), "audio/ogg")
+        return send_audio(to, to_ogg_opus(wav), "audio/ogg", phone_id)
     except Exception as exc:
         log.warning("voice reply failed: %s", type(exc).__name__)
         return False
@@ -170,7 +198,7 @@ def demo_voice(msg: DemoVoice) -> dict[str, Any]:
         tr = transcribe_audio_bytes(data, mime=mime, filename=f"voice.{ext}")
     except Exception as exc:
         return {"status": "stt_failed", "reply": f"Speech-to-text failed ({type(exc).__name__}). Is GROQ_API_KEY set?", "cost_usd": 0.0}
-    res = bridge.handle_text(sender=msg.sender, text=tr["transcript"])
+    res = bridge.handle_text(sender=msg.sender, text=tr["transcript"], channel="demo")
     res["transcript"] = tr
     if VOICE_REPLIES and res.get("reply"):
         try:
@@ -194,7 +222,7 @@ def demo_send(msg: DemoMessage) -> dict[str, Any]:
     if msg.kind == "voice":
         transcript_meta = transcribe_voice_note("demo-voice-01", simulated_transcript=msg.text)
         text = transcript_meta["transcript"]
-    res = bridge.handle_text(sender=msg.sender, text=text)
+    res = bridge.handle_text(sender=msg.sender, text=text, channel="demo")
     if transcript_meta:
         res["transcript"] = transcript_meta
     return res

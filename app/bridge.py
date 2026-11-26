@@ -26,6 +26,11 @@ class AgentBridge:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    def job_status(self, job_id: str) -> dict[str, Any]:
+        req = urllib.request.Request(f"{self.agent_url}/v1/maint/job?id={job_id}")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def _standalone_run(self, task: str) -> dict[str, Any]:
         low = task.lower()
         if any(w in low for w in ("ignore previous", "system prompt", "rm -rf", "bypass")):
@@ -61,7 +66,7 @@ class AgentBridge:
             "cost_usd": 0.0005,
         }
 
-    def handle_text(self, sender: str, text: str) -> dict[str, Any]:
+    def handle_text(self, sender: str, text: str, channel: str = "whatsapp") -> dict[str, Any]:
         # 1. Check if this message is an approval reply (YES/NO <CODE>)
         decision = parse_approval_reply(text)
         if decision is not None:
@@ -75,6 +80,15 @@ class AgentBridge:
             if self.agent_url:
                 try:
                     res = self._http_post("/v1/approve", {"code": code, "approved": approved})
+                    result = res.get("result") or {}
+                    if approved and result.get("started"):
+                        what = " ".join(x for x in (result.get("action"), result.get("target")) if x)
+                        return {"status": "started", "job_id": result.get("job_id"), "raw": res,
+                                "reply": f"▶️ Started: {what}. I'll message you when it's done."}
+                    if approved and result.get("error"):
+                        return {"status": "not_started", "raw": res, "reply": f"❌ Not started: {result['error']}"}
+                    if approved and result.get("note"):
+                        return {"status": res.get("status", "executed"), "raw": res, "reply": result["note"]}
                     action_word = "Executed" if approved else "Cancelled"
                     return {
                         "status": res.get("status", "executed" if approved else "rejected"),
@@ -95,7 +109,7 @@ class AgentBridge:
             try:
                 res = self._http_post(
                     "/v1/run",
-                    {"task": text, "channel": "whatsapp", "max_steps": 3, "max_cost_usd": 0.02},
+                    {"task": text, "channel": channel, "max_steps": 3, "max_cost_usd": 0.02},
                 )
             except urllib.error.URLError:
                 res = self._standalone_run(text)
@@ -112,7 +126,7 @@ class AgentBridge:
 
         return {
             "status": res.get("status", "completed"),
-            "reply": res.get("answer", ""),
+            "reply": res.get("answer", ""),   # empty when the agent ignored the message (missing admin keyword) -> nothing is sent
             "approval_code": res.get("approval_code"),
             "cost_usd": res.get("cost_usd", 0.0),
         }

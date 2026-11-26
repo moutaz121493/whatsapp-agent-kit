@@ -144,3 +144,25 @@ def test_to_ogg_opus_converts_wav() -> None:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(b"\x00\x00" * 24000)
     ogg = media.to_ogg_opus(buf.getvalue())
     assert ogg[:4] == b"OggS" and b"OpusHead" in ogg[:200]
+
+
+def test_ignored_message_sends_nothing(monkeypatch) -> None:
+    from app import main as main_mod
+    monkeypatch.setattr(main_mod.bridge, "agent_url", "http://agent")
+    monkeypatch.setattr(main_mod.bridge, "_http_post", lambda path, payload: {"status": "ignored", "answer": ""})
+    sent = []
+    monkeypatch.setattr(main_mod, "send_text", lambda to, body, phone_id=None: sent.append(body) or True)
+    body = json.dumps({"entry": [{"changes": [{"value": {"metadata": {"phone_number_id": "1"},
+            "messages": [{"from": "491700000001", "type": "text", "text": {"body": "restart paperless"}}]}}]}]}).encode()
+    r = client.post("/webhook/whatsapp", content=body, headers={"X-Hub-Signature-256": _sign(body)})
+    assert r.status_code == 200 and sent == []
+
+
+def test_approval_of_real_job_reports_started(monkeypatch) -> None:
+    from app import main as main_mod
+    monkeypatch.setattr(main_mod.bridge, "agent_url", "http://agent")
+    main_mod.hitl_store.save(code="AB12", sender="+491700000001", tool="fix", args={"action": "backup-now"})
+    monkeypatch.setattr(main_mod.bridge, "_http_post", lambda path, payload: {"ok": True, "status": "executed",
+                        "result": {"started": True, "job_id": "20261126-180000", "action": "backup-now", "target": ""}})
+    res = main_mod.bridge.handle_text(sender="+491700000001", text="YES AB12")
+    assert res["status"] == "started" and res["job_id"] == "20261126-180000" and "Started: backup-now" in res["reply"]

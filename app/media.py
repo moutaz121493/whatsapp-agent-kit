@@ -67,9 +67,10 @@ def transcribe_voice_note(media_id: str, simulated_transcript: str | None = None
     return {"media_id": media_id, "provider": "mock-whisper", "transcript": text}
 
 
-def send_text(to: str, body: str) -> bool:
-    """Reply on WhatsApp (Cloud API). No-op (False) unless WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID are set."""
-    token, phone_id = os.getenv("WHATSAPP_TOKEN", "").strip(), os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+def send_text(to: str, body: str, phone_id: str | None = None) -> bool:
+    """Reply on WhatsApp (Cloud API). phone_id defaults to WHATSAPP_PHONE_NUMBER_ID (the webhook passes the number that
+    received the message). No-op (False) without a token or phone id."""
+    token, phone_id = os.getenv("WHATSAPP_TOKEN", "").strip(), (phone_id or os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")).strip()
     if not (token and phone_id and to):
         return False
     payload = {"messaging_product": "whatsapp", "to": to.lstrip("+"), "type": "text", "text": {"body": body[:4000]}}
@@ -110,9 +111,9 @@ def synthesize_speech(text: str, fmt: str | None = None) -> tuple[bytes, str]:
         return r.read(), {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg", "flac": "audio/flac"}.get(fmt, "audio/wav")
 
 
-def send_audio(to: str, data: bytes, mime: str) -> bool:
-    """Upload audio to WhatsApp and send it as a voice message. No-op without WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID."""
-    token, phone_id = os.getenv("WHATSAPP_TOKEN", "").strip(), os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+def send_audio(to: str, data: bytes, mime: str, phone_id: str | None = None) -> bool:
+    """Upload audio to WhatsApp and send it as a voice message. No-op without a token or phone id."""
+    token, phone_id = os.getenv("WHATSAPP_TOKEN", "").strip(), (phone_id or os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")).strip()
     if not (token and phone_id and to and data):
         return False
     boundary = uuid.uuid4().hex

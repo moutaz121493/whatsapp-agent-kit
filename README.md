@@ -44,6 +44,13 @@ Open **`http://127.0.0.1:8082/demo`** in your browser to test:
 - `VOICE_REPLIES=1`: a voice note gets a **spoken answer** too (Orpheus TTS, English or Saudi Arabic voice chosen from the reply text, converted to an OGG/Opus voice note with `opusenc`); the text reply always goes first, so a TTS failure loses nothing. Measured on a Pi 5: voice question → spoken answer in ~2 s (English), ~4 s (longer Arabic answer).
   If a voice note can't be transcribed, the sender is told so instead of the agent guessing.
 
+## Admin commands and job follow-up
+
+Each channel passes its name to the agent (`whatsapp`, `telegram`, `demo`), so the agent's `ADMIN_KEYWORD` gate applies to
+chat apps but not to the private demo page. Ignored runs send nothing back. After `YES <code>` starts a maintenance job,
+the kit follows it and sends one message when it finishes (✅ done / ❌ failed with the last log lines).
+The Cloud API phone number ID is taken from each webhook's metadata, so `WHATSAPP_PHONE_NUMBER_ID` is optional.
+
 ## Telegram channel (no public webhook)
 
 Set `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TELEGRAM_ALLOWED_IDS` (your numeric user ID). The bot **long-polls**
