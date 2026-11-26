@@ -205,7 +205,8 @@ DEMO_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WhatsApp Agent Kit — Local Simulator</title>
+  <title>{{TITLE}}</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; background: #0b1118; color: #e8eff3; margin: 0; padding: 24px; display: flex; justify-content: center; }
     .shell { width: 100%; max-width: 680px; background: #111a24; border: 1px solid #1f2e3d; border-radius: 14px; overflow: hidden; }
@@ -222,8 +223,9 @@ DEMO_HTML = """<!doctype html>
     .meta { font-size: 11px; color: #8d9ca8; margin-top: 4px; }
     .voice { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-top: 1px solid #1f2e3d; font-size: 13px; color: #8d9ca8; flex-wrap: wrap; }
     .voice input { flex: none; padding: 4px; font-size: 12px; }
-    #rec { background: #1a2938; color: #ff6b6b; border: 1px solid #2a3d52; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
-    #rec.on { background: #ff6b6b; color: #0b1118; }
+    #rec { background: #45e08f; color: #0b1118; border: 0; border-radius: 999px; padding: 12px 22px; font-size: 15px; font-weight: 700; cursor: pointer; min-height: 48px; }
+    @media (max-width: 700px) { .shell form { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } body { padding: 0; } .shell { border-radius: 0; border: 0; min-height: 100dvh; display: flex; flex-direction: column; } #log { flex: 1; height: auto; } #rec { flex: 1 1 100%; } }
+    #rec.on { background: #ff6b6b; color: #0b1118; animation: pulse 1s infinite; } @keyframes pulse { 50% { opacity: .7; } }
     form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #1f2e3d; background: #0e1620; }
     input { flex: 1; background: #14202d; color: #e8eff3; border: 1px solid #26384c; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
     button.send { background: #45e08f; color: #0b1118; border: none; border-radius: 8px; padding: 10px 16px; font-weight: 600; cursor: pointer; }
@@ -232,8 +234,8 @@ DEMO_HTML = """<!doctype html>
 <body>
   <div class="shell">
     <header>
-      <h1>WhatsApp Agent Kit · Simulator</h1>
-      <span>Allowlisted: +491700000001</span>
+      <h1>{{TITLE}}</h1>
+      <span>{{SUBTITLE}}</span>
     </header>
     <div class="chips">
       <button onclick="sendQuick('text', 'Check homelab container health status')">Health Check</button>
@@ -242,11 +244,11 @@ DEMO_HTML = """<!doctype html>
     </div>
     <div id="log"></div>
     <div class="voice">
-      <label>🎙 Real voice note: <input type="file" id="aud" accept="audio/*" capture /></label>
-      <button type="button" id="rec" hidden>● Record</button>
+      <button type="button" id="rec" hidden>🎙 Tap to talk</button>
+      <label>or send an audio file: <input type="file" id="aud" accept="audio/*" /></label>
     </div>
     <form onsubmit="event.preventDefault(); sendQuick('text', document.getElementById('inp').value); document.getElementById('inp').value='';">
-      <input id="inp" placeholder="Type a WhatsApp message or YES <CODE>..." autocomplete="off" />
+      <input id="inp" placeholder="Type a message or YES <CODE>…" autocomplete="off" />
       <button class="send" type="submit">Send</button>
     </form>
   </div>
@@ -263,7 +265,7 @@ DEMO_HTML = """<!doctype html>
     const toB64 = (buf) => { let s = ''; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
     async function sendAudio(blob) {
       add('user', '[Voice note] ' + Math.round(blob.size / 1024) + ' KB', 'you');
-      const r = await fetch('/demo/voice', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      const r = await fetch('demo/voice', { method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({sender: '+491700000001', mime: blob.type || 'audio/ogg', audio_b64: toB64(await blob.arrayBuffer())}) });
       const data = await r.json();
       if (data.transcript) add('bot', '📝 ' + data.transcript.transcript, `speech-to-text ${data.transcript.stt_ms} ms`);
@@ -282,14 +284,14 @@ DEMO_HTML = """<!doctype html>
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         rec = new MediaRecorder(stream); chunks = [];
         rec.ondataavailable = (e) => chunks.push(e.data);
-        rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); btn.classList.remove('on'); btn.textContent = '● Record'; sendAudio(new Blob(chunks, { type: rec.mimeType })); rec = null; };
-        rec.start(); btn.classList.add('on'); btn.textContent = '■ Stop';
+        rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); btn.classList.remove('on'); btn.textContent = '🎙 Tap to talk'; sendAudio(new Blob(chunks, { type: rec.mimeType })); rec = null; };
+        rec.start(); btn.classList.add('on'); btn.textContent = '■ Stop and send';
       };
     }
     async function sendQuick(kind, text) {
       if (!text.trim()) return;
       add('user', (kind === 'voice' ? '[Voice note] ' : '') + text, 'you');
-      const r = await fetch('/demo/send', {
+      const r = await fetch('demo/send', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({sender: '+491700000001', kind, text})
@@ -304,4 +306,7 @@ DEMO_HTML = """<!doctype html>
 
 @app.get("/demo", response_class=HTMLResponse)
 def demo_ui() -> str:
-    return DEMO_HTML
+    # DEMO_TITLE / DEMO_SUBTITLE let a real deployment brand the page; relative API paths work behind a path prefix
+    from html import escape
+    return (DEMO_HTML.replace("{{TITLE}}", escape(os.getenv("DEMO_TITLE", "WhatsApp Agent Kit · Simulator")))
+            .replace("{{SUBTITLE}}", escape(os.getenv("DEMO_SUBTITLE", "Allowlisted: +491700000001"))))
