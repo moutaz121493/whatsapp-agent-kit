@@ -15,7 +15,7 @@ from .hitl import HitlStore
 import base64
 import logging
 
-from .media import send_audio, send_text, synthesize_speech, transcribe_audio_bytes, transcribe_voice_note
+from .media import send_audio, send_text, synthesize_speech, to_ogg_opus, transcribe_audio_bytes, transcribe_voice_note
 from .security import is_sender_allowed, parse_allowlist, verify_meta_signature
 
 DB_PATH = Path(os.getenv("HITL_DB_PATH", "/tmp/whatsapp-hitl.db"))
@@ -123,8 +123,8 @@ def _voice_reply(to: str, text: str) -> bool:
     if not (VOICE_REPLIES and text):
         return False
     try:
-        data, mime = synthesize_speech(text, fmt=os.getenv("TTS_FORMAT_WHATSAPP", "mp3"))
-        return send_audio(to, data, mime)
+        wav, _ = synthesize_speech(text)
+        return send_audio(to, to_ogg_opus(wav), "audio/ogg")
     except Exception as exc:
         log.warning("voice reply failed: %s", type(exc).__name__)
         return False

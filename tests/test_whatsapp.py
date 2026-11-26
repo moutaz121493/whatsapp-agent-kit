@@ -131,3 +131,16 @@ def test_send_audio_noop_without_credentials(monkeypatch) -> None:
     from app import media
     monkeypatch.delenv("WHATSAPP_TOKEN", raising=False)
     assert media.send_audio("+491700000001", b"x", "audio/mpeg") is False
+
+
+def test_to_ogg_opus_converts_wav() -> None:
+    import io, shutil, wave
+    import pytest
+    from app import media
+    if not shutil.which("opusenc"):
+        pytest.skip("opus-tools not installed")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(b"\x00\x00" * 24000)
+    ogg = media.to_ogg_opus(buf.getvalue())
+    assert ogg[:4] == b"OggS" and b"OpusHead" in ogg[:200]

@@ -4,6 +4,8 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# opus-tools (opusenc, ~1 MB): turns the TTS WAV into OGG/Opus voice notes
+RUN apt-get update && apt-get install -y --no-install-recommends opus-tools && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

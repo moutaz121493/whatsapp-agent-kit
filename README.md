@@ -41,7 +41,7 @@ Open **`http://127.0.0.1:8082/demo`** in your browser to test:
 - The `/demo` page has a **real voice-note** picker (any audio file) and, on https/localhost, a record button;
   it calls `POST /demo/voice` (`{sender, mime, audio_b64}`) → speech-to-text → agent.
 - With `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`, answers are sent back to the sender via the Cloud API.
-- `VOICE_REPLIES=1`: a voice note gets a **spoken answer** too (Orpheus TTS, English or Saudi Arabic voice chosen from the reply text); the text reply always goes first, so a TTS failure loses nothing.
+- `VOICE_REPLIES=1`: a voice note gets a **spoken answer** too (Orpheus TTS, English or Saudi Arabic voice chosen from the reply text, converted to an OGG/Opus voice note with `opusenc`); the text reply always goes first, so a TTS failure loses nothing. Measured on a Pi 5: voice question → spoken answer in ~2 s (English), ~4 s (longer Arabic answer).
   If a voice note can't be transcribed, the sender is told so instead of the agent guessing.
 
 ## Included n8n Workflow (`n8n/whatsapp-router.json`)

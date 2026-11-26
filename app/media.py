@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import time
 import urllib.request
 import uuid
@@ -131,3 +133,12 @@ def send_audio(to: str, data: bytes, mime: str) -> bool:
                                  headers={**hdr, "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return 200 <= r.status < 300
+
+
+def to_ogg_opus(wav: bytes) -> bytes:
+    """WAV (what Orpheus returns) -> OGG/Opus mono 32 kbit/s, the format chat apps show as a voice note."""
+    if not shutil.which("opusenc"):
+        raise RuntimeError("opusenc (opus-tools) not installed")
+    out = subprocess.run(["opusenc", "--quiet", "--bitrate", "32", "--downmix-mono", "-", "-"],
+                         input=wav, capture_output=True, timeout=30, check=True)
+    return out.stdout
