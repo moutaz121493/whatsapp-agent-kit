@@ -33,6 +33,16 @@ Open **`http://127.0.0.1:8082/demo`** in your browser to test:
 - **Voice: Restart Worker (HITL)** — simulates a voice note → pauses with an ephemeral approval code → reply `YES <CODE>` to execute.
 - **Prompt Injection Test** — blocked deterministically at `$0.00` cost.
 
+## Real voice notes and replies
+
+- With `GROQ_API_KEY` (or `STT_API_KEY` + `STT_BASE_URL` for any OpenAI-compatible speech-to-text), voice notes are
+  transcribed for real with `whisper-large-v3-turbo`: WhatsApp media is downloaded from the Graph API with `WHATSAPP_TOKEN`.
+  On the author's Raspberry Pi 5: **~0.4 s speech-to-text, ~1.2–1.4 s from voice note to answer** (English and Arabic).
+- The `/demo` page has a **real voice-note** picker (any audio file) and, on https/localhost, a record button;
+  it calls `POST /demo/voice` (`{sender, mime, audio_b64}`) → speech-to-text → agent.
+- With `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`, answers are sent back to the sender via the Cloud API.
+  If a voice note can't be transcribed, the sender is told so instead of the agent guessing.
+
 ## Included n8n Workflow (`n8n/whatsapp-router.json`)
 
 Import `n8n/whatsapp-router.json` into [`pi-n8n-ai-stack`](https://github.com/moutaz121493/pi-n8n-ai-stack) to orchestrate inbound WhatsApp webhooks visually alongside other automations.
