@@ -1,0 +1,77 @@
+{
+  "name": "WhatsApp Cloud API -> Guarded Agent Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wa-webhook",
+      "name": "WhatsApp Inbound Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.WHATSAPP_KIT_URL || 'http://host.docker.internal:8082' }}/demo/send",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sender: $json.body.sender || '+491700000001', kind: $json.body.kind || 'text', text: $json.body.text || '' }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "forward-kit",
+      "name": "Forward to WhatsApp Agent Kit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "reply-wa",
+      "name": "Return Agent Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [780, 300]
+    }
+  ],
+  "connections": {
+    "WhatsApp Inbound Webhook": {
+      "main": [
+        [
+          {
+            "node": "Forward to WhatsApp Agent Kit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to WhatsApp Agent Kit": {
+      "main": [
+        [
+          {
+            "node": "Return Agent Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

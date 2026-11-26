@@ -1,0 +1,20 @@
+services:
+  whatsapp-agent:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${WA_BIND_HOST:-127.0.0.1}:${WA_PORT:-8082}:8082"
+    environment:
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-dev-verify-token}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-dev-app-secret}
+      WHATSAPP_ALLOWLIST: ${WHATSAPP_ALLOWLIST:-+491700000001}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:-}
+      HITL_DB_PATH: /data/hitl.db
+    volumes:
+      - wa_data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: 128m
+
+volumes:
+  wa_data:
