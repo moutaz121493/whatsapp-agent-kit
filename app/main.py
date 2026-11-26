@@ -114,6 +114,7 @@ async def receive_webhook(
                     continue
 
                 msg_type = msg.get("type", "text")
+                log.info("WhatsApp %s from sender ending %s", msg_type, sender[-4:])
                 if msg_type == "audio":
                     media_id = msg.get("audio", {}).get("id", "audio-0")
                     try:
